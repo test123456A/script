@@ -1,101 +1,163 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
+#!/usr/bin/python
+#coding: UTF-8
 
-# C extensions
-*.so
+import ConfigParser
+import smtplib
+import sqlite3
+import sys
+import os
 
-# Distribution / packaging
-.Python
-env/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
+for ipd in range(10,101):
+    ipo = ipd
 
-# PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-*.spec
+con = sqlite3.connect("controle.bd")
+c = con.cursor()
+c.execute('''
+CREATE TABLE IF NOT EXISTS computador (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  mac CHAR(17) NOT NULL,
+  descricao VARCHAR(50) NOT NULL,
+  tipo INTEGER DEFAULT 1 NOT NULL
+)
+''')
 
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
+config = ConfigParser.ConfigParser()
+config.read('configuracao.ini')
 
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-.hypothesis/
 
-# Translations
-*.mo
-*.pot
+def recarregarServico():
+    config = ConfigParser.ConfigParser()
+    config.read('configuracao.ini')
+    os.system("/etc/init.d/networking restart")
+    os.system("/etc/init.d/squid restart")
+    con = sqlite3.connect("controle.bd")
+    c = con.cursor()
+    print("Serviço recarregado!")
 
-# Django stuff:
-*.log
-local_settings.py
+def enviarEmail(para,assunto,mensagem):
+    config = ConfigParser.ConfigParser()
+    config.read('configuracao.ini')
+    usuario = config.get('Email','usuario')
+    senha = config.get('Email','senha')
 
-# Flask stuff:
-instance/
-.webassets-cache
+    msg = """From: %s\nTo: %s\nSubject: %s\n\n%s
+    """ % (usuario,para,assunto,mensagem)
+    serverSTMP = smtplib.SMTP("smtp.gmail.com",587)
+    serverSTMP.ehlo()
+    serverSTMP.starttls()
+    serverSTMP.login(usuario,senha)
+    serverSTMP.sendmail(usuario,para,msg)
+    serverSTMP.quit()
 
-# Scrapy stuff:
-.scrapy
+def dhcp():
+    arq = open('/home/carlos/dhcpd.conf', 'a')
+    texto = []
+    texto.append("""
+default-lease-time 600;
+max-lease-time 7200;
+option subnet-mask 255.255.255.0;
+option broadcast-address 192.168.1.255;
+option routers 192.168.1.254;
+option domain-name-servers 192.168.1.1, 192.168.1.2;
+option domain-search "example.com";
+subnet 192.168.1.0 netmask 255.255.255.0 {
+    range 192.168.1.10 192.168.1.100;
+}
+    
+host %s {
+    option host-name "%s.example.com";
+    hardware ethernet %s;
+    fixed-address 192.168.1.%s;
+}""" % (descricao,descricao,mac,ipo)) 
+    arq.writelines(texto)
+    arq.close()
+def hosts():
+    arqi = open('/home/carlos/hosts', 'a')
+    textu = []
+    textu.append("""
+        localhost   127.0.0.1""")
+    textu.append(""" %s   192.168.1.%s
+        """ % (descricao,ipo)) 
+    arqi.writelines(textu)
+    arqi.close()
 
-# Sphinx documentation
-docs/_build/
+def firewall():
+    arqy = open('/home/carlos/squid.conf', 'a')
+    texty = []
+    texty.append("""
+acl manager proto cache_object
+acl localhost src 127.0.0.1/32 ::1
+acl to_localhost dst 127.0.0.0/8 0.0.0.0/32 ::1
+acl localnet src 192.168.0.0/24
 
-# PyBuilder
-target/
+acl SSL_ports port 443
+acl Safe_ports port 80 # http
+acl Safe_ports port 21 # ftp
+acl Safe_ports port 443 # https
+acl Safe_ports port 70 # gopher
+acl Safe_ports port 210 # wais
+acl Safe_ports port 1025-65535 # unregistered ports
+acl Safe_ports port 280 # http-mgmt
+acl Safe_ports port 488 # gss-http
+acl Safe_ports port 591 # filemaker
+acl Safe_ports port 777 # multiling http
+acl CONNECT method CONNECT
 
-# Jupyter Notebook
-.ipynb_checkpoints
+acl liberados_mac arp "/etc/squid/MAC_liberado"
+http_access allow liberados_mac
+ 
+http_access allow manager localhost
+http_access deny manager 
 
-# pyenv
-.python-version
+http_access deny !Safe_ports 
 
-# celery beat schedule file
-celerybeat-schedule
+http_access deny CONNECT !SSL_ports
+  
+http_access allow localnet
+http_access allow localhost
+http_access deny all
+ 
+http_port 3128
+""")
+    arqy.writelines(texty)
+    arqy.close()
+def maclib():
+    f = open('/home/carlos/MAC_liberado','a')
+    mac = sys.argv[2]
+    f.write(mac+' #%s ' % (descricao))
+    f.close()
 
-# SageMath parsed files
-*.sage.py
+if sys.argv[1] == 'add':
+    mac = sys.argv[2]
+    descricao = sys.argv[3]
+    tipo = sys.argv[4]
+    c.execute("INSERT INTO computador (mac,descricao,tipo) VALUES ('"+mac+"','"+descricao+"',"+tipo+")")
+    con.commit()
+    para = config.get('Geral','email')
+    enviarEmail(para,"Novo MAC","Novo cadastro do MAC:"+mac)
+    dhcp()
+    hosts()
+    firewall()
+    maclib()
+    recarregarServico()
 
-# dotenv
-.env
+elif sys.argv[1] == 'remove':
+    mac = sys.argv[2]
+    c.execute("DELETE FROM computador WHERE mac = '"+mac+"'")
+    con.commit()
+    para = config.get('Geral','email')
+    enviarEmail(para,"Removendo MAC","MAC Removido:"+mac)
+    recarregarServico()
 
-# virtualenv
-.venv
-venv/
-ENV/
+elif sys.argv[1] == 'update':
+    mac_antigo = sys.argv[2]
+    mac_novo = sys.argv[3]
+    c.execute("UPDATE computador SET mac='"+mac_novo+"' WHERE mac = '"+mac_antigo+"'")
+    con.commit()
+    para = config.get('Geral','email')
+    enviarEmail(para,"Alterando MAC","MAC Alterado:"+mac_novo)
+    recarregarServico()
 
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
-# mypy
-.mypy_cache/
+elif sys.argv[1] == 'list':
+    for computador in c.execute("SELECT * FROM computador"):
+        print(computador)
