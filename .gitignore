@@ -50,7 +50,7 @@ def enviarEmail(para,assunto,mensagem):
     serverSTMP.quit()
 
 def dhcp():
-    arq = open('/home/carlos/dhcpd.conf', 'a')
+    arq = open('/etc/dhcp/dhcpd.conf', 'a')
     texto = []
     texto.append("""
 default-lease-time 600;
@@ -72,7 +72,7 @@ host %s {
     arq.writelines(texto)
     arq.close()
 def hosts():
-    arqi = open('/home/carlos/hosts', 'a')
+    arqi = open('/etc/hosts', 'a')
     textu = []
     textu.append("""
         localhost   127.0.0.1""")
@@ -82,7 +82,7 @@ def hosts():
     arqi.close()
 
 def firewall():
-    arqy = open('/home/carlos/squid.conf', 'a')
+    arqy = open('/etc/squid/squid.conf', 'a')
     texty = []
     texty.append("""
 acl manager proto cache_object
@@ -122,7 +122,7 @@ http_port 3128
     arqy.writelines(texty)
     arqy.close()
 def maclib():
-    f = open('/home/carlos/MAC_liberado','a')
+    f = open('/etc/squid/MAC_liberado','a')
     mac = sys.argv[2]
     f.write(mac+' #%s ' % (descricao))
     f.close()
